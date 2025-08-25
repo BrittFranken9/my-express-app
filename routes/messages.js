@@ -5,7 +5,7 @@ const router = express.Router();
 // Eenvoudige in-memory store (werkt ook zonder DB)
 let messages = [
   { _id: '1', text: 'Hello' },
-  { _id: '2', text: 'from the TEST!' }
+  { _id: '2', text: 'from the MESSAGES' }
 ];
 
 // GET /messages -> lijst (Array)
