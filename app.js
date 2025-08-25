@@ -4,8 +4,8 @@ import dotenv from 'dotenv';
 import cors from 'cors'; // 👈 nieuw
 import testRoute from './routes/test.js';
 import indexRoute from './routes/index.js';
-import messagesRoute from './routes/messages.js';
 import userRoute from './routes/users.js';
+import messagesRoute from './routes/messages.js';
 
 dotenv.config();
 const app = express();
