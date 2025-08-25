@@ -7,28 +7,29 @@ import messagesRoute from './routes/messages.js';
 import userRoute from './routes/users.js';
 
 dotenv.config();
-
 const app = express();
+
+app.use(express.json());
 
 app.use('/', indexRoute);
 app.use('/test', testRoute);
 app.use('/messages', messagesRoute);
 app.use('/users', userRoute);
 
-app.use(express.json());
+// Health check
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
 
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-db.once('open', () => {
-  console.log('Connected to MongoDB');
-});
+// Alleen verbinden als MONGO_URI bestaat
+const uri = process.env.MONGO_URI;
+if (uri && uri.trim()) {
+  mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('MongoDB connection error:', err?.message || err));
+} else {
+  console.warn('MONGO_URI not set — skipping MongoDB connection.');
+}
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+
+export default app;
