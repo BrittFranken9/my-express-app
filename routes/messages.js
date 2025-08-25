@@ -1,66 +1,92 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Message from '../models/Message.js';
 
 const router = express.Router();
 
-// GET: Retrieve all messages
+// GET all
 router.get('/', async (req, res) => {
-  // get all messages
-  const messages = await Message.find().populate('sender', 'username email').populate('recipients', 'username email');
-
-  res.json(messages);
+  try {
+    const messages = await Message.find()
+      .populate('sender', 'username email')
+      .populate('recipients', 'username email')
+      .lean();
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching messages', error: error.message });
+  }
 });
 
-// GET: Retreive one message by ID
+// GET by id
 router.get('/:id', async (req, res) => {
-  const { id } = req.params; // == req.params.id;
-  const message = await Message.findById(id);
-  res.json(message);
-}); 
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid message id' });
+    }
+    const message = await Message.findById(id)
+      .populate('sender', 'username email')
+      .populate('recipients', 'username email')
+      .lean();
+    if (!message) return res.status(404).json({ message: 'Message not found' });
+    res.json(message);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching message', error: error.message });
+  }
+});
 
-// POST: Add a new message
+// POST
 router.post('/', async (req, res) => {
   try {
-    const newMessage = new Message(req.body); // Create a new instance of Message model
-    await newMessage.save(); // Save to MongoDB
+    const { text, sender, recipients } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ message: "Field 'text' is required (string)" });
+    }
+    const newMessage = await Message.create({
+      text,
+      ...(sender ? { sender } : {}),
+      ...(Array.isArray(recipients) ? { recipients } : {}),
+    });
     res.status(201).json({ message: 'Message added successfully!', messageData: newMessage });
   } catch (error) {
-    res.status(500).json({ message: 'Error adding message', error: error.message });
+    // ValidationError => 400
+    const status = error.name === 'ValidationError' ? 400 : 500;
+    res.status(status).json({ message: 'Error adding message', error: error.message });
   }
 });
 
-// PUT: Update an existing message
+// PUT
 router.put('/:id', async (req, res) => {
-  const { id } = req.params; // Get the message ID from params
-  const updatedMessage = req.body; // Get the new message data from request body
-  
   try {
-    const message = await Message.findByIdAndUpdate(id, updatedMessage, { new: true });
-    if (message) {
-      res.json({ message: 'Message updated successfully!', messageData: message });
-    } else {
-      res.status(404).json({ message: 'Message not found' });
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid message id' });
     }
+    const updated = await Message.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) return res.status(404).json({ message: 'Message not found' });
+    res.json({ message: 'Message updated successfully!', messageData: updated });
   } catch (error) {
-    res.status(500).json({ message: 'Error updating message', error: error.message });
+    const status = error.name === 'ValidationError' ? 400 : 500;
+    res.status(status).json({ message: 'Error updating message', error: error.message });
   }
 });
 
-// DELETE: Remove a message by ID
+// DELETE
 router.delete('/:id', async (req, res) => {
-  const { id } = req.params; 
-  
   try {
-    const message = await Message.findByIdAndDelete(id); // Find the message by ID and delete it
-    if (message) {
-      res.json({ message: 'Message deleted successfully!' });
-    } else {
-      res.status(404).json({ message: 'Message not found' });
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid message id' });
     }
+    const removed = await Message.findByIdAndDelete(id);
+    if (!removed) return res.status(404).json({ message: 'Message not found' });
+    res.json({ message: 'Message deleted successfully!' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting message', error: error.message });
   }
 });
-
 
 export default router;
