@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import cors from 'cors'; // 👈 nieuw
 import testRoute from './routes/test.js';
 import indexRoute from './routes/index.js';
 import messagesRoute from './routes/messages.js';
@@ -9,6 +10,7 @@ import userRoute from './routes/users.js';
 dotenv.config();
 const app = express();
 
+app.use(cors());          // 👈 belangrijk voor Expo/React Native
 app.use(express.json());
 
 app.use('/', indexRoute);
