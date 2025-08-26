@@ -19,7 +19,7 @@ passport.deserializeUser(async (id, done) => {
 // src/config/passport.js
 const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env;
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-  throw new Error('Google OAuth env vars missing. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL.');
+  throw new Error('Google OAuth env vars missing. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET');
 }
 
 
@@ -28,7 +28,6 @@ passport.use(
     {
       clientID: GOOGLE_CLIENT_ID || 'missing',
       clientSecret: GOOGLE_CLIENT_SECRET || 'missing',
-      callbackURL: GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback'
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
