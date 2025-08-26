@@ -67,26 +67,44 @@ passport.use(
     },
     async (_accessToken, _refreshToken, profile, done) => {
       try {
-        const email = profile.emails?.[0]?.value || null;
+        const googleId = profile.id;
+        const emailRaw = profile.emails?.[0]?.value || null;
+        const email = emailRaw ? emailRaw.trim().toLowerCase() : null;
+        const username = profile.displayName || (email ? email.split('@')[0] : 'Google User');
 
-        // Always find by googleId
-        let user = await User.findOne({ googleId: profile.id });
+        // Zoek op googleId of (indien aanwezig) email en koppel in één stap
+        const query = email ? { $or: [{ googleId }, { email }] } : { googleId };
+        const setFields = { googleId, username };
+        if (email) setFields.email = email;
 
-        if (!user) {
-          user = await User.create({
-            googleId: profile.id,            // ✅ store googleId
-            username: profile.displayName,
-            email,
-          });
-        }
+        const user = await User.findOneAndUpdate(
+          query,
+          { $set: setFields, $setOnInsert: {} },
+          { new: true, upsert: true }
+        );
 
         return done(null, user);
       } catch (err) {
-        return done(err, null);              // ✅ correct variable
+        // Fallback: als er tóch een duplicate op email was door race-condition, link nogmaals
+        if (err?.code === 11000 && err?.keyPattern?.email && profile.emails?.[0]?.value) {
+          try {
+            const email = profile.emails[0].value.trim().toLowerCase();
+            const user = await User.findOneAndUpdate(
+              { email },
+              { $set: { googleId: profile.id } },
+              { new: true }
+            );
+            if (user) return done(null, user);
+          } catch (linkErr) {
+            return done(linkErr, null);
+          }
+        }
+        return done(err, null);
       }
     }
   )
 );
+
 
 passport.serializeUser((user, done) => {
   done(null, user.id);
