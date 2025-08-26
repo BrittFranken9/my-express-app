@@ -55,7 +55,7 @@ const fromBase64Url = (str) => {
 };
 
 // ====== Passport Google OAuth ======
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+const BASE_URL = process.env.BASE_URL || 'https://my-express-app-nawn.onrender.com';
 const GOOGLE_CALLBACK_URL = `${BASE_URL}/auth/google/callback`;
 
 passport.use(
