@@ -21,7 +21,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Basic middleware
-app.use(cors()); // adjust origin/credentials if you also serve a web SPA
+app.use(cors());
 app.use(express.json());
 
 // Sessions (used for Passport login state, NOT for redirectUri anymore)
@@ -40,6 +40,20 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// ---- base64url helpers (work on all Node versions) ----
+const toBase64Url = (str) =>
+  Buffer.from(str, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+
+const fromBase64Url = (str) => {
+  let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  return Buffer.from(b64, 'base64').toString('utf8');
+};
+
 // ====== Passport Google OAuth ======
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const GOOGLE_CALLBACK_URL = `${BASE_URL}/auth/google/callback`;
@@ -51,7 +65,7 @@ passport.use(
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       callbackURL: GOOGLE_CALLBACK_URL,
     },
-    async (accessToken, refreshToken, profile, done) => {
+    async (_accessToken, _refreshToken, profile, done) => {
       try {
         const email = profile.emails?.[0]?.value || null;
 
@@ -60,7 +74,7 @@ passport.use(
 
         if (!user) {
           user = await User.create({
-            googleId: profile.id,           // ✅ store googleId
+            googleId: profile.id, // store googleId
             username: profile.displayName,
             email,
           });
@@ -68,7 +82,7 @@ passport.use(
 
         return done(null, user);
       } catch (err) {
-        return done(err, null); // ✅ correct variable
+        return done(err, null);
       }
     }
   )
@@ -87,26 +101,10 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// ====== Routes ======
-app.use('/', indexRoute);
-app.use('/test', testRoute);
-app.use('/messages', messagesRoute);
-app.use('/users', userRoute);
-
-// Health check
+// ---------- Health check (can be anywhere) ----------
 app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
-// Mongo
-const uri = process.env.MONGO_URI;
-if (uri && uri.trim()) {
-  mongoose
-    .connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('Connected to MongoDB'))
-    .catch((err) => console.error('MongoDB connection error:', err?.message || err));
-} else {
-  console.warn('MONGO_URI not set — skipping MongoDB connection.');
-}
-
+// ---------- AUTH ROUTES — MOUNT BEFORE ANY GENERIC "/" ROUTERS ----------
 /**
  * Start OAuth: we NO LONGER stash redirectUri in req.session.
  * Instead we encode it into OAuth `state`, which Google echoes back.
@@ -116,11 +114,11 @@ app.get('/auth/google', (req, res, next) => {
 
   // Encode redirectUri safely into state
   const statePayload = { redirectUri: redirectUri || 'exp://localhost:19000' };
-  const state = Buffer.from(JSON.stringify(statePayload), 'utf8').toString('base64url');
+  const state = toBase64Url(JSON.stringify(statePayload));
 
   passport.authenticate('google', {
     scope: ['profile', 'email'],
-    state, // ✅ carry redirectUri this way
+    state, // carry redirectUri via OAuth state
   })(req, res, next);
 });
 
@@ -136,7 +134,7 @@ app.get(
 
     try {
       if (req.query.state) {
-        const parsed = JSON.parse(Buffer.from(req.query.state, 'base64url').toString('utf8'));
+        const parsed = JSON.parse(fromBase64Url(req.query.state));
         if (parsed?.redirectUri) redirectUri = parsed.redirectUri;
       }
     } catch {
@@ -164,6 +162,25 @@ app.get(
 app.get('/auth/failure', (_req, res) => {
   res.status(401).send('Authentication failed.');
 });
+
+// ---------- Other routers (specific first) ----------
+app.use('/test', testRoute);
+app.use('/messages', messagesRoute);
+app.use('/users', userRoute);
+
+// ---------- Generic/index router LAST so it doesn't swallow /auth ----------
+app.use('/', indexRoute);
+
+// ---------- Mongo ----------
+const uri = process.env.MONGO_URI;
+if (uri && uri.trim()) {
+  mongoose
+    .connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error('MongoDB connection error:', err?.message || err));
+} else {
+  console.warn('MONGO_URI not set — skipping MongoDB connection.');
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on', PORT));
