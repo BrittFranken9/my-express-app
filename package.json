@@ -1,7 +1,7 @@
 {
   "name": "my-express-app",
   "version": "1.0.0",
-  "description": "Events app backend with Google Auth (Express + Mongoose + Passport)",
+  "description": "Events app with Google Auth (Express + Mongoose + Passport)",
   "main": "app.js",
   "type": "module",
   "scripts": {
