@@ -82,13 +82,28 @@ if (uri && uri.trim()) {
   console.warn('MONGO_URI not set — skipping MongoDB connection.');
 }
 
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/auth/google', (req, res, next) => {
+  const redirectUri = req.query.redirectUri;
+  if (redirectUri) {
+    req.session.redirectUri = redirectUri;
+  }
+  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+});
 
-app.get('/auth/google/callback',
-  passport.authenticate('google', {
-    failureRedirect: '/',
-    successRedirect: '/profile'
-  })
+app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: '/' }),
+  (req, res) => {
+    const user = req.user;
+
+    const redirectUri = req.session.redirectUri || 'exp://localhost:19000';
+    const userInfo = {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+    };
+
+    const redirectUrl = `${redirectUri}?user=${encodeURIComponent(JSON.stringify(userInfo))}`;
+    res.redirect(redirectUrl);
+  }
 );
 
 const PORT = process.env.PORT || 3000;
