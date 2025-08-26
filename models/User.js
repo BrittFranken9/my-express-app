@@ -1,12 +1,50 @@
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
-  text: { type: String, required: true, trim: true },
-    // tijdelijk niet required zodat je kunt posten zonder user
-    sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
-    recipients: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    createdAt: { type: Date, default: Date.now },
+    googleId: {
+        type: String,
+    },
+    username: {
+        type: String,
+        required: true
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    name: {
+        type: String,
+        required: false // Make name optional for Google auth
+    },
+    age: {
+        type: Number,
+        required: false // Make age optional for Google auth
+    },
+    gender: {
+        type: String,
+        enum: ['Male', 'Female', 'Other'],
+        required: false // Make age optional for Google auth
+    },
+    weightKg: {
+        type: Number,
+        required: false // Make age optional for Google auth
+    },
+    activityLevel: {
+        type: String,
+        enum: ['Sedentary', 'Lightly Active', 'Moderately Active', 'Very Active', 'Muscle Gain'],
+        required: false // Make age optional for Google auth
+    },
+    signupDate: {
+        type: Date,
+        default: Date.now
+    },
+    proteinGoal: {
+        type: Number,
+        required: false // Make age optional for Google auth
+    }
 });
 
 const User = mongoose.model('User', userSchema);
+
 export default User;

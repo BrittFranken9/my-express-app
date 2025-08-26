@@ -1,18 +1,18 @@
-// routes/users.js
-import express from 'express';
-import User from '../models/User.js';
-const router = express.Router();
+import { Router } from 'express';
+import {
+  listUsers,
+  getUser,
+  createUser,
+  updateUser,
+  deleteUser,
+} from '../controllers/userController.js';
 
-router.get('/', async (req, res) => {
-  const users = await User.find().sort({ createdAt: -1 });
-  res.json(users);
-});
+const router = Router();
 
-router.post('/', async (req, res) => {
-  const { username, name, email } = req.body;
-  if (!username || !name || !email) return res.status(400).json({ error: 'Missing fields' });
-  const user = await User.create({ username, name, email });
-  res.status(201).json(user);
-});
+router.get('/', listUsers);
+router.get('/:id', getUser);
+router.post('/', createUser);
+router.patch('/:id', updateUser);
+router.delete('/:id', deleteUser);
 
 export default router;
