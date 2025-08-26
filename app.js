@@ -13,16 +13,6 @@ import indexRoute from './routes/index.js';
 import userRoute from './routes/users.js';
 import messagesRoute from './routes/messages.js';
 
-import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
-
-const returnUrl = AuthSession.makeRedirectUri({ useProxy: true }); 
-const result = await WebBrowser.openAuthSessionAsync(
-  `${API_BASE}/auth/google?redirectUri=${encodeURIComponent(returnUrl)}`,
-  returnUrl
-);
-
-app.set('trust proxy', 1);
 dotenv.config();
 const app = express();
 
