@@ -1,8 +1,8 @@
-// server.js (ESM)
 import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import cors from 'cors';
+import cors from 'cors'; // 👈 nieuw
+
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import session from 'express-session';
@@ -13,83 +13,56 @@ import indexRoute from './routes/index.js';
 import userRoute from './routes/users.js';
 import messagesRoute from './routes/messages.js';
 
-dotenv.config();
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 
+const returnUrl = AuthSession.makeRedirectUri({ useProxy: true }); 
+const result = await WebBrowser.openAuthSessionAsync(
+  `${API_BASE}/auth/google?redirectUri=${encodeURIComponent(returnUrl)}`,
+  returnUrl
+);
+
+app.set('trust proxy', 1);
+dotenv.config();
 const app = express();
 
-// Trust the Render proxy so secure cookies work correctly
-app.set('trust proxy', 1);
-
-// Basic middleware
-app.use(cors());
+app.use(cors());          // 👈 belangrijk voor Expo/React Native
 app.use(express.json());
 
-// Sessions (used for Passport login state, NOT for redirectUri anymore)
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'change-me',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === 'production', // requires HTTPS on Render
-      sameSite: 'lax',
-    },
-  })
-);
+app.use(session ( {
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: process.env.NODE_ENV === 'production' }
+} ));
 
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ---- base64url helpers (work on all Node versions) ----
-const toBase64Url = (str) =>
-  Buffer.from(str, 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-
-const fromBase64Url = (str) => {
-  let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (b64.length % 4) b64 += '=';
-  return Buffer.from(b64, 'base64').toString('utf8');
-};
-
-// ====== Passport Google OAuth ======
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-const GOOGLE_CALLBACK_URL = `${BASE_URL}/auth/google/callback`;
-
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: GOOGLE_CALLBACK_URL,
-    },
-    async (_accessToken, _refreshToken, profile, done) => {
-      try {
-        const email = profile.emails?.[0]?.value || null;
-
-        // Find by googleId (consistent with how we create)
-        let user = await User.findOne({ googleId: profile.id });
-
-        if (!user) {
-          user = await User.create({
-            googleId: profile.id, // store googleId
-            username: profile.displayName,
-            email,
-          });
-        }
-
-        return done(null, user);
-      } catch (err) {
-        return done(err, null);
-      }
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: 'https://my-express-app-nawn.onrender.com/auth/google/callback',
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    const email = profile.emails[0].value;
+    let user = await User.findOne({ googleId: profile.id });
+    if (!user) {
+      // If not, create a new user
+      user = await User.create({
+        username: profile.displayName,
+        email: email,
+      });
     }
-  )
-);
+    return done(null, user);
+  } catch (err) {
+    return done(error, null);
+  }
+}));
+
 
 passport.serializeUser((user, done) => {
-  done(null, user.id); // mongoose virtual string of _id
+  done(null, user.id);
 });
 
 passport.deserializeUser(async (id, done) => {
@@ -101,86 +74,47 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// ---------- Health check (can be anywhere) ----------
-app.get('/healthz', (_req, res) => res.status(200).send('ok'));
+app.use('/', indexRoute);
+app.use('/test', testRoute);
+app.use('/messages', messagesRoute);
+app.use('/users', userRoute);
 
-// ---------- AUTH ROUTES — MOUNT BEFORE ANY GENERIC "/" ROUTERS ----------
-/**
- * Start OAuth: we NO LONGER stash redirectUri in req.session.
- * Instead we encode it into OAuth `state`, which Google echoes back.
- */
+// Health check
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
+
+// Alleen verbinden als MONGO_URI bestaat
+const uri = process.env.MONGO_URI;
+if (uri && uri.trim()) {
+  mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('MongoDB connection error:', err?.message || err));
+} else {
+  console.warn('MONGO_URI not set — skipping MongoDB connection.');
+}
+
 app.get('/auth/google', (req, res, next) => {
-  const { redirectUri } = req.query;
-
-  // Encode redirectUri safely into state
-  const statePayload = { redirectUri: redirectUri || 'exp://localhost:19000' };
-  const state = toBase64Url(JSON.stringify(statePayload));
-
-  passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    state, // carry redirectUri via OAuth state
-  })(req, res, next);
+  const redirectUri = req.query.redirectUri;
+  if (redirectUri) {
+    req.session.redirectUri = redirectUri;
+  }
+  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
 });
 
-/**
- * OAuth callback: decode state, then redirect to the requested return URL
- * with user info attached. This closes the AuthSession on iOS/Android.
- */
-app.get(
-  '/auth/google/callback',
-  passport.authenticate('google', { failureRedirect: '/auth/failure' }),
+app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
-    let redirectUri = 'exp://localhost:19000';
-
-    try {
-      if (req.query.state) {
-        const parsed = JSON.parse(fromBase64Url(req.query.state));
-        if (parsed?.redirectUri) redirectUri = parsed.redirectUri;
-      }
-    } catch {
-      // fall back to default redirectUri
-    }
-
     const user = req.user;
+
+    const redirectUri = req.session.redirectUri || 'exp://localhost:19000';
     const userInfo = {
       id: user.id,
       username: user.username,
       email: user.email,
     };
 
-    // Preserve existing query params if any
-    const hasQuery = redirectUri.includes('?');
-    const qs = new URLSearchParams({
-      user: JSON.stringify(userInfo),
-    }).toString();
-
-    const finalUrl = `${redirectUri}${hasQuery ? '&' : '?'}${qs}`;
-    return res.redirect(finalUrl);
+    const redirectUrl = `${redirectUri}?user=${encodeURIComponent(JSON.stringify(userInfo))}`;
+    res.redirect(redirectUrl);
   }
 );
-
-app.get('/auth/failure', (_req, res) => {
-  res.status(401).send('Authentication failed.');
-});
-
-// ---------- Other routers (specific first) ----------
-app.use('/test', testRoute);
-app.use('/messages', messagesRoute);
-app.use('/users', userRoute);
-
-// ---------- Generic/index router LAST so it doesn't swallow /auth ----------
-app.use('/', indexRoute);
-
-// ---------- Mongo ----------
-const uri = process.env.MONGO_URI;
-if (uri && uri.trim()) {
-  mongoose
-    .connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('Connected to MongoDB'))
-    .catch((err) => console.error('MongoDB connection error:', err?.message || err));
-} else {
-  console.warn('MONGO_URI not set — skipping MongoDB connection.');
-}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on', PORT));
