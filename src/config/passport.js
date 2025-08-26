@@ -16,15 +16,12 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-const {
-  GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET,
-  GOOGLE_CALLBACK_URL
-} = process.env;
-
+// src/config/passport.js
+const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL } = process.env;
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_CALLBACK_URL) {
-  console.warn('Google OAuth env vars are missing; Google login will not work until they are set.');
+  throw new Error('Google OAuth env vars missing. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL.');
 }
+
 
 passport.use(
   new GoogleStrategy(
