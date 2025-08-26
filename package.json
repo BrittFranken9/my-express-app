@@ -1,27 +1,32 @@
 {
   "name": "my-express-app",
   "version": "1.0.0",
+  "description": "Events app backend with Google Auth (Express + Mongoose + Passport)",
+  "main": "app.js",
   "type": "module",
-  "description": "",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon app.js",
     "start": "node app.js",
-    "dev": "nodemon app.js"
+    "seed": "node src/utils/seed.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
+    "connect-mongo": "^5.1.0",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-    "express-session": "^1.18.2",
-    "mongoose": "^8.18.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.17.3",
+    "helmet": "^7.1.0",
+    "mongoose": "^8.5.1",
+    "morgan": "^1.10.0",
     "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0"
+    "passport-google-oauth20": "^2.0.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.4"
   }
 }
