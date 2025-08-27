@@ -15,7 +15,6 @@ import eventsRoute from './routes/events.js';
 
 dotenv.config();
 
-
 const app = express();
 
 // Trust the Render proxy so secure cookies work correctly
@@ -25,22 +24,10 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
-const mongoUri = process.env.MONGO_URI;
-if (mongoUri && mongoUri.trim()) {
-  mongoose
-    .connect(mongoUri) // v4+ doesn't need useNewUrlParser/useUnifiedTopology
-    .then(() => console.log('Connected to MongoDB'))
-    .catch((err) => console.error('MongoDB connection error:', err?.message || err));
-} else {
-  console.warn('MONGO_URI not set — skipping MongoDB connection.');
-}
-
-
-
-// Sessions (used for Passport login state; NOT for redirectUri)
+// ----- Session / Passport -----
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'change-me', // prevents crash on missing env
+    secret: process.env.SESSION_SECRET || 'change-me',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -53,8 +40,7 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-
-// ---- base64url helpers (work on all Node versions) ----
+// ---- base64url helpers ----
 const toBase64Url = (str) =>
   Buffer.from(str, 'utf8')
     .toString('base64')
@@ -86,7 +72,7 @@ passport.use(
         const email = emailRaw ? emailRaw.trim().toLowerCase() : null;
         const username = profile.displayName || (email ? email.split('@')[0] : 'Google User');
 
-        // Zoek op googleId of (indien aanwezig) email en koppel in één stap
+        // Link by googleId OR existing email
         const query = email ? { $or: [{ googleId }, { email }] } : { googleId };
         const setFields = { googleId, username };
         if (email) setFields.email = email;
@@ -99,7 +85,6 @@ passport.use(
 
         return done(null, user);
       } catch (err) {
-        // Fallback: als er tóch een duplicate op email was door race-condition, link nogmaals
         if (err?.code === 11000 && err?.keyPattern?.email && profile.emails?.[0]?.value) {
           try {
             const email = profile.emails[0].value.trim().toLowerCase();
@@ -119,11 +104,9 @@ passport.use(
   )
 );
 
-
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
-
 passport.deserializeUser(async (id, done) => {
   try {
     const user = await User.findById(id);
@@ -139,8 +122,6 @@ app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 // ---------- AUTH ROUTES — put BEFORE any generic "/" router ----------
 app.get('/auth/google', (req, res, next) => {
   const { redirectUri } = req.query;
-
-  // Carry redirectUri through OAuth using state (no session reliance)
   const statePayload = { redirectUri: redirectUri || 'exp://localhost:19000' };
   const state = toBase64Url(JSON.stringify(statePayload));
 
@@ -155,15 +136,12 @@ app.get(
   passport.authenticate('google', { failureRedirect: '/auth/failure' }),
   (req, res) => {
     let redirectUri = 'exp://localhost:19000';
-
     try {
       if (req.query.state) {
         const parsed = JSON.parse(fromBase64Url(req.query.state));
         if (parsed?.redirectUri) redirectUri = parsed.redirectUri;
       }
-    } catch {
-      // fallback to default
-    }
+    } catch { /* ignore */ }
 
     const user = req.user;
     const userInfo = {
@@ -189,18 +167,39 @@ app.use('/api/events', eventsRoute);
 // ---------- Generic/index router LAST so it doesn't swallow /auth ----------
 app.use('/', indexRoute);
 
-// ---------- Mongo ----------
-const uri = process.env.MONGO_URI;
-if (uri && uri.trim()) {
-  mongoose
-    .connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('Connected to MongoDB'))
-    .catch((err) => console.error('MongoDB connection error:', err?.message || err));
+// ---------- Start server first (Render needs the port open quickly) ----------
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`[server] listening on http://${HOST}:${PORT}`);
+});
+
+// ---------- Connect to MongoDB asynchronously (no double connect) ----------
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI || !MONGO_URI.trim()) {
+  console.warn('[mongo] MONGO_URI not set — skipping MongoDB connection.');
 } else {
-  console.warn('MONGO_URI not set — skipping MongoDB connection.');
+  mongoose
+    .connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 8000,
+      maxPoolSize: 10,
+    })
+    .then(() => console.log('[mongo] connected'))
+    .catch((err) => {
+      console.error('[mongo] connection error:', err?.message || err);
+      // Server keeps running; /healthz shows DB state
+    });
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log('Listening on', PORT));
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('[server] SIGTERM received');
+  try {
+    await mongoose.connection.close();
+    process.exit(0);
+  } catch {
+    process.exit(1);
+  }
+});
 
 export default app;
