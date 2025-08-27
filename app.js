@@ -6,6 +6,7 @@ import cors from 'cors';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import session from 'express-session';
+import MongoStore from 'connect-mongo';
 
 import User from './models/User.js';
 import testRoute from './routes/test.js';
@@ -23,6 +24,16 @@ app.set('trust proxy', 1);
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+const mongoUri = process.env.MONGO_URI;
+if (mongoUri && mongoUri.trim()) {
+  mongoose
+    .connect(mongoUri) // v4+ doesn't need useNewUrlParser/useUnifiedTopology
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error('MongoDB connection error:', err?.message || err));
+} else {
+  console.warn('MONGO_URI not set — skipping MongoDB connection.');
+}
 
 // Sessions (used for Passport login state; NOT for redirectUri)
 app.use(
