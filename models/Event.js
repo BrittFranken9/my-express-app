@@ -4,8 +4,9 @@ const EventSchema = new mongoose.Schema(
   {
     organizerName: {
       type: String,
-      required: [true, 'Organizer name is required'],
+      required: false,
       trim: true,
+      default: '',
     },
     organizationName: {
       type: String,
@@ -14,7 +15,7 @@ const EventSchema = new mongoose.Schema(
     },
     date: {
       type: Date,
-      default: '',
+      default: null,
     },
     imageUrl: {
       type: String,
@@ -29,8 +30,9 @@ const EventSchema = new mongoose.Schema(
     },
     location: {
       type: String,
-      required: [true, 'Location is required'],
+      required: false,
       trim: true,
+      default: '',
     },
     ticketsUrl: {
       type: String,
@@ -42,39 +44,44 @@ const EventSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
-
-    // We store both the raw string (for exact display) AND a normalized array (for search)
+    // Raw keywords entered by user, e.g. "music; festival; outdoor"
     keywordsRaw: {
       type: String,
       default: '',
       trim: true,
     },
+    // Normalized keyword list for search/filtering
     keywords: {
       type: [String],
-      index: true, // helps keyword-based search
+      index: true,
       default: [],
     },
-
-    // Simple counts (denormalized) for quick listing; real per-user state is in UserEvent
+    // Aggregated counts (per-user state stored in UserEvent)
     likesCount: { type: Number, default: 0 },
     goingCount: { type: Number, default: 0 },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-// Normalize keywordsRaw into keywords array on save
-EventSchema.pre('save', function normalizeKeywords(next) {
-  if (typeof this.keywordsRaw === 'string') {
-    const arr = this.keywordsRaw
-      .split(';')
-      .map(s => s.trim())
-      .filter(Boolean);
-    this.keywords = arr;
+// Normalize keywords from keywordsRaw before save
+EventSchema.pre('save', function (next) {
+  try {
+    const raw = (this.keywordsRaw || '').toString();
+    const parts = raw
+      .split(/[;,]/)         // split on ; or ,
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.toLowerCase());
+    this.keywords = parts;
+    return next();
+  } catch (err) {
+    return next(err);
   }
-  next();
 });
 
-// Text index for full-text search (teaser + organizer + org + location)
+// Text index for quick search
 EventSchema.index({
   teaser: 'text',
   organizerName: 'text',
