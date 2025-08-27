@@ -2,79 +2,34 @@ import mongoose from 'mongoose';
 
 const EventSchema = new mongoose.Schema(
   {
-    // identify the creator
-    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+    // Store owner as STRING for consistency with the app's AsyncStorage userId
+    ownerId: { type: String, index: true },
 
-    // NEW: title
-    title: {
-      type: String,
-      default: '',
-      trim: true,
-    },
+    // Optional title (shown in lists)
+    title: { type: String, default: '', trim: true },
 
-    organizerName: {
-      type: String,
-      required: false,
-      trim: true,
-      default: '',
-    },
-    organizationName: {
-      type: String,
-      default: '',
-      trim: true,
-    },
-    date: {
-      type: Date,
-      default: null,
-    },
-    imageUrl: {
-      type: String,
-      default: '',
-      trim: true,
-    },
-    teaser: {
-      type: String,
-      default: '',
-      trim: true,
-      maxlength: 400,
-    },
-    location: {
-      type: String,
-      required: false,
-      trim: true,
-      default: '',
-    },
-    ticketsUrl: {
-      type: String,
-      default: '',
-      trim: true,
-    },
-    websiteUrl: {
-      type: String,
-      default: '',
-      trim: true,
-    },
+    organizerName: { type: String, default: '', trim: true },
+    organizationName: { type: String, default: '', trim: true },
 
-    keywordsRaw: {
-      type: String,
-      default: '',
-      trim: true,
-    },
-    keywords: {
-      type: [String],
-      index: true,
-      default: [],
-    },
+    date: { type: Date, default: null },
+
+    imageUrl: { type: String, default: '', trim: true },
+    teaser: { type: String, default: '', trim: true, maxlength: 400 },
+    location: { type: String, default: '', trim: true },
+
+    ticketsUrl: { type: String, default: '', trim: true },
+    websiteUrl: { type: String, default: '', trim: true },
+
+    keywordsRaw: { type: String, default: '', trim: true },
+    keywords: { type: [String], index: true, default: [] },
 
     likesCount: { type: Number, default: 0 },
     goingCount: { type: Number, default: 0 },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Normalize keywords
+// Normalize keywords from keywordsRaw before save
 EventSchema.pre('save', function (next) {
   try {
     const raw = (this.keywordsRaw || '').toString();
@@ -92,7 +47,7 @@ EventSchema.pre('save', function (next) {
 
 // Text index for quick search
 EventSchema.index({
-  title: 'text',           // include title in the text index
+  title: 'text',
   teaser: 'text',
   organizerName: 'text',
   organizationName: 'text',

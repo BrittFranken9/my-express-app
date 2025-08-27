@@ -5,11 +5,11 @@ import UserEvent from '../models/UserEvent.js';
 
 const router = express.Router();
 
-/**
- * Create an event (all fields optional)
- */
+/** Create an event (all fields optional) */
 router.post('/', async (req, res) => {
   try {
+    // Ensure ownerId is a string if present
+    if (req.body.ownerId != null) req.body.ownerId = String(req.body.ownerId);
     const event = await Event.create(req.body);
     return res.status(201).json(event);
   } catch (err) {
@@ -54,13 +54,9 @@ router.get('/', async (req, res) => {
       if (toDate) filter.date.$lte = new Date(toDate);
     }
 
+    // Owner filter (string-based)
     if (ownerId && String(ownerId).trim()) {
-      if (mongoose.Types.ObjectId.isValid(ownerId)) {
-        filter.ownerId = new mongoose.Types.ObjectId(ownerId);
-      } else {
-        // If ownerId was stored as string, match that string value
-        filter.ownerId = String(ownerId);
-      }
+      filter.ownerId = String(ownerId);
     }
 
     const skip = (Number(page) - 1) * Number(limit);
@@ -81,7 +77,7 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * Archive: events a user liked/going
+ * Archive: events a user liked or is going to
  * GET /events/mine/list?userId=...&status=like|going&page=1&limit=12
  */
 router.get('/mine/list', async (req, res) => {
@@ -91,25 +87,19 @@ router.get('/mine/list', async (req, res) => {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
-  // Accept ObjectId or string for user
-  const userFilter = mongoose.Types.ObjectId.isValid(userId)
-    ? new mongoose.Types.ObjectId(userId)
-    : String(userId || '');
-
-  if (!userFilter) {
-    return res.status(400).json({ error: 'Missing user id' });
-  }
+  const user = String(userId || '').trim();
+  if (!user) return res.status(400).json({ error: 'Missing user id' });
 
   const skip = (Number(page) - 1) * Number(limit);
 
   try {
     const [rows, total] = await Promise.all([
-      UserEvent.find({ user: userFilter, status })
+      UserEvent.find({ user, status })
         .sort('-createdAt')
         .skip(skip)
         .limit(Number(limit))
         .populate('event'),
-      UserEvent.countDocuments({ user: userFilter, status }),
+      UserEvent.countDocuments({ user, status }),
     ]);
 
     return res.json({
@@ -137,6 +127,7 @@ router.get('/:id', async (req, res) => {
 /** Patch event */
 router.patch('/:id', async (req, res) => {
   try {
+    if (req.body.ownerId != null) req.body.ownerId = String(req.body.ownerId);
     const event = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: false });
     if (!event) return res.status(404).json({ error: 'Not found' });
     return res.json(event);
@@ -174,29 +165,22 @@ async function toggleUserEvent(req, res, statusKey) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
-  // Accept ObjectId or string for user
-  const userFilter = mongoose.Types.ObjectId.isValid(userId)
-    ? new mongoose.Types.ObjectId(userId)
-    : String(userId || '');
-
-  if (!userFilter) {
-    return res.status(400).json({ error: 'Missing user id' });
-  }
+  const user = String(userId || '').trim();
+  if (!user) return res.status(400).json({ error: 'Missing user id' });
 
   try {
     if (on) {
-      // add (create if not exists)
+      // create if not exists (unique index prevents dupes)
       await UserEvent.updateOne(
-        { user: userFilter, event: eventId, status: statusKey },
-        { $setOnInsert: { user: userFilter, event: eventId, status: statusKey } },
+        { user, event: eventId, status: statusKey },
+        { $setOnInsert: { user, event: eventId, status: statusKey } },
         { upsert: true }
       );
-      // bump counters on Event
       const inc = statusKey === 'like' ? { likesCount: 1 } : { goingCount: 1 };
       await Event.updateOne({ _id: eventId }, { $inc: inc });
     } else {
       // remove if exists
-      const del = await UserEvent.findOneAndDelete({ user: userFilter, event: eventId, status: statusKey });
+      const del = await UserEvent.findOneAndDelete({ user, event: eventId, status: statusKey });
       if (del) {
         const inc = statusKey === 'like' ? { likesCount: -1 } : { goingCount: -1 };
         await Event.updateOne({ _id: eventId }, { $inc: inc });
