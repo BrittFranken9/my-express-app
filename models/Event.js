@@ -14,16 +14,16 @@ const EventSchema = new mongoose.Schema(
     },
     date: {
       type: Date,
-      required: [true, 'Event date is required'],
+      default: '',
     },
     imageUrl: {
       type: String,
-      required: [true, 'Image URL is required'],
+      default: '',
       trim: true,
     },
     teaser: {
       type: String,
-      required: [true, 'Teaser description is required'],
+      default: '',
       trim: true,
       maxlength: 400,
     },
