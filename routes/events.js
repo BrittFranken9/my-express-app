@@ -8,16 +8,13 @@ const router = express.Router();
 
 /**
  * Create an event
- * Body:
- *  - organizerName (required)
- *  - organizationName (optional)
- *  - date (required, ISO string or timestamp)
- *  - imageUrl (required)
- *  - teaser (required)
- *  - location (required)
- *  - ticketsUrl (optional)
- *  - websiteUrl (optional)
- *  - keywordsRaw (optional string with ';' separators)
+ * Body (all optional now):
+ *  - ownerId (ObjectId of user creating the event)
+ *  - organizerName, organizationName
+ *  - date (ISO string)
+ *  - imageUrl, teaser, location
+ *  - ticketsUrl, websiteUrl
+ *  - keywordsRaw (string with ';' or ',' separators)
  */
 router.post('/', async (req, res) => {
   try {
@@ -32,7 +29,8 @@ router.post('/', async (req, res) => {
  * List events with optional search & pagination
  * Query params:
  *  - q (text search across teaser/organizer/org/location)
- *  - keywords (semicolon-separated string; matches any)
+ *  - keywords (semicolon/comma-separated string; matches any)
+ *  - ownerId (only events created by this user)
  *  - fromDate, toDate (ISO date strings)
  *  - page (default 1), limit (default 12)
  *  - sort (default "-date" = upcoming first; use "date" for old->new)
@@ -42,6 +40,7 @@ router.get('/', async (req, res) => {
     const {
       q,
       keywords,
+      ownerId,
       fromDate,
       toDate,
       page = 1,
@@ -51,6 +50,22 @@ router.get('/', async (req, res) => {
 
     const filter = {};
 
+    // Text query
+    if (q && String(q).trim()) {
+      filter.$text = { $search: String(q).trim() };
+    }
+
+    // Keyword filter
+    if (keywords && String(keywords).trim()) {
+      const arr = String(keywords)
+        .split(/[;,]/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      if (arr.length) {
+        filter.keywords = { $in: arr };
+      }
+    }
+
     // Date range
     if (fromDate || toDate) {
       filter.date = {};
@@ -58,26 +73,15 @@ router.get('/', async (req, res) => {
       if (toDate) filter.date.$lte = new Date(toDate);
     }
 
-    // Keywords: any match
-    if (keywords && typeof keywords === 'string') {
-      const arr = keywords.split(';').map(s => s.trim()).filter(Boolean);
-      if (arr.length) filter.keywords = { $in: arr };
+    // Owner filter
+    if (ownerId && mongoose.Types.ObjectId.isValid(ownerId)) {
+      filter.ownerId = ownerId;
     }
 
-    // Text search → bouw één filter voor beide queries
-    const countFilter = (q && q.trim())
-      ? { ...filter, $text: { $search: q.trim() } }
-      : { ...filter };
-
     const skip = (Number(page) - 1) * Number(limit);
-
-    const [total, items] = await Promise.all([
-      Event.countDocuments(countFilter),
-      Event.find(countFilter)
-        .sort(sort)
-        .skip(skip)
-        .limit(Number(limit))
-        .lean(),
+    const [items, total] = await Promise.all([
+      Event.find(filter).sort(sort).skip(skip).limit(Number(limit)),
+      Event.countDocuments(filter),
     ]);
 
     return res.json({
@@ -92,9 +96,9 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * Get a user's liked/going events (for your archive page)
- * GET /mine/list?userId=...&status=like|going&page=1&limit=12
- * (Deze route MOET boven '/:id' staan om route-collisions te vermijden)
+ * Get a user's liked/going events (for archive pages)
+ * GET /events/mine/list?userId=...&status=like|going&page=1&limit=12
+ * (Keep this above '/:id' to avoid collisions)
  */
 router.get('/mine/list', async (req, res) => {
   const { userId, status = 'like', page = 1, limit = 12 } = req.query;
@@ -113,13 +117,12 @@ router.get('/mine/list', async (req, res) => {
         .sort('-createdAt')
         .skip(skip)
         .limit(Number(limit))
-        .populate('event')
-        .lean(),
+        .populate('event'),
       UserEvent.countDocuments({ user: userId, status }),
     ]);
 
     return res.json({
-      items: rows.map(r => r.event),
+      items: rows.map((r) => r.event),
       total,
       page: Number(page),
       pages: Math.ceil(total / Number(limit)),
@@ -132,22 +135,21 @@ router.get('/mine/list', async (req, res) => {
 /** Get single event */
 router.get('/:id', async (req, res) => {
   try {
-    const event = await Event.findById(req.params.id).lean();
+    const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ error: 'Not found' });
     return res.json(event);
   } catch (err) {
-    return res.status(400).json({ error: 'Invalid id' });
+    return res.status(400).json({ error: err.message });
   }
 });
 
-/** Update event (partial) */
+/** Update (PATCH) event */
 router.patch('/:id', async (req, res) => {
   try {
-    const event = await Event.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const event = await Event.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: false,
+    });
     if (!event) return res.status(404).json({ error: 'Not found' });
     return res.json(event);
   } catch (err) {
@@ -160,11 +162,10 @@ router.delete('/:id', async (req, res) => {
   try {
     const deleted = await Event.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Not found' });
-    // Also clean up UserEvent rows for this event
-    await UserEvent.deleteMany({ event: deleted._id });
+    await UserEvent.deleteMany({ event: deleted._id }); // cleanup
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(400).json({ error: 'Invalid id' });
+    return res.status(400).json({ error: err.message });
   }
 });
 
@@ -186,14 +187,11 @@ async function toggleUserEvent(req, res, statusKey) {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     return res.status(400).json({ error: 'Invalid user id' });
   }
-  if (typeof on !== 'boolean') {
-    return res.status(400).json({ error: '`on` must be boolean' });
+  if (!['like', 'going'].includes(statusKey)) {
+    return res.status(400).json({ error: 'Invalid status' });
   }
 
   try {
-    const exists = await Event.exists({ _id: eventId });
-    if (!exists) return res.status(404).json({ error: 'Event not found' });
-
     if (on) {
       // add (create if not exists)
       await UserEvent.updateOne(

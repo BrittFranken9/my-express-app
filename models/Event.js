@@ -2,6 +2,9 @@ import mongoose from 'mongoose';
 
 const EventSchema = new mongoose.Schema(
   {
+    // NEW: saved to identify the creator of the event
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+
     organizerName: {
       type: String,
       required: false,
@@ -44,6 +47,7 @@ const EventSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+
     // Raw keywords entered by user, e.g. "music; festival; outdoor"
     keywordsRaw: {
       type: String,
@@ -56,6 +60,7 @@ const EventSchema = new mongoose.Schema(
       index: true,
       default: [],
     },
+
     // Aggregated counts (per-user state stored in UserEvent)
     likesCount: { type: Number, default: 0 },
     goingCount: { type: Number, default: 0 },
