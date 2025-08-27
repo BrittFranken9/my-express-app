@@ -1,4 +1,3 @@
-// routes/events.js
 import express from 'express';
 import mongoose from 'mongoose';
 import Event from '../models/Event.js';
@@ -7,14 +6,7 @@ import UserEvent from '../models/UserEvent.js';
 const router = express.Router();
 
 /**
- * Create an event
- * Body (all optional now):
- *  - ownerId (ObjectId of user creating the event)
- *  - organizerName, organizationName
- *  - date (ISO string)
- *  - imageUrl, teaser, location
- *  - ticketsUrl, websiteUrl
- *  - keywordsRaw (string with ';' or ',' separators)
+ * Create an event (all fields optional)
  */
 router.post('/', async (req, res) => {
   try {
@@ -26,14 +18,8 @@ router.post('/', async (req, res) => {
 });
 
 /**
- * List events with optional search & pagination
- * Query params:
- *  - q (text search across teaser/organizer/org/location)
- *  - keywords (semicolon/comma-separated string; matches any)
- *  - ownerId (only events created by this user)
- *  - fromDate, toDate (ISO date strings)
- *  - page (default 1), limit (default 12)
- *  - sort (default "-date" = upcoming first; use "date" for old->new)
+ * List events with optional filters
+ * ?q, ?keywords, ?ownerId, ?fromDate, ?toDate, ?page, ?limit, ?sort
  */
 router.get('/', async (req, res) => {
   try {
@@ -50,32 +36,31 @@ router.get('/', async (req, res) => {
 
     const filter = {};
 
-    // Text query
     if (q && String(q).trim()) {
       filter.$text = { $search: String(q).trim() };
     }
 
-    // Keyword filter
     if (keywords && String(keywords).trim()) {
       const arr = String(keywords)
         .split(/[;,]/)
         .map((s) => s.trim().toLowerCase())
         .filter(Boolean);
-      if (arr.length) {
-        filter.keywords = { $in: arr };
-      }
+      if (arr.length) filter.keywords = { $in: arr };
     }
 
-    // Date range
     if (fromDate || toDate) {
       filter.date = {};
       if (fromDate) filter.date.$gte = new Date(fromDate);
       if (toDate) filter.date.$lte = new Date(toDate);
     }
 
-    // Owner filter
-    if (ownerId && mongoose.Types.ObjectId.isValid(ownerId)) {
-      filter.ownerId = ownerId;
+    if (ownerId && String(ownerId).trim()) {
+      if (mongoose.Types.ObjectId.isValid(ownerId)) {
+        filter.ownerId = new mongoose.Types.ObjectId(ownerId);
+      } else {
+        // If ownerId was stored as string, match that string value
+        filter.ownerId = String(ownerId);
+      }
     }
 
     const skip = (Number(page) - 1) * Number(limit);
@@ -96,29 +81,35 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * Get a user's liked/going events (for archive pages)
+ * Archive: events a user liked/going
  * GET /events/mine/list?userId=...&status=like|going&page=1&limit=12
- * (Keep this above '/:id' to avoid collisions)
  */
 router.get('/mine/list', async (req, res) => {
   const { userId, status = 'like', page = 1, limit = 12 } = req.query;
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: 'Invalid user id' });
-  }
+
   if (!['like', 'going'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  // Accept ObjectId or string for user
+  const userFilter = mongoose.Types.ObjectId.isValid(userId)
+    ? new mongoose.Types.ObjectId(userId)
+    : String(userId || '');
+
+  if (!userFilter) {
+    return res.status(400).json({ error: 'Missing user id' });
   }
 
   const skip = (Number(page) - 1) * Number(limit);
 
   try {
     const [rows, total] = await Promise.all([
-      UserEvent.find({ user: userId, status })
+      UserEvent.find({ user: userFilter, status })
         .sort('-createdAt')
         .skip(skip)
         .limit(Number(limit))
         .populate('event'),
-      UserEvent.countDocuments({ user: userId, status }),
+      UserEvent.countDocuments({ user: userFilter, status }),
     ]);
 
     return res.json({
@@ -132,7 +123,7 @@ router.get('/mine/list', async (req, res) => {
   }
 });
 
-/** Get single event */
+/** Get one event */
 router.get('/:id', async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
@@ -143,13 +134,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-/** Update (PATCH) event */
+/** Patch event */
 router.patch('/:id', async (req, res) => {
   try {
-    const event = await Event.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: false,
-    });
+    const event = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: false });
     if (!event) return res.status(404).json({ error: 'Not found' });
     return res.json(event);
   } catch (err) {
@@ -162,7 +150,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const deleted = await Event.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Not found' });
-    await UserEvent.deleteMany({ event: deleted._id }); // cleanup
+    await UserEvent.deleteMany({ event: deleted._id });
     return res.json({ ok: true });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -171,11 +159,9 @@ router.delete('/:id', async (req, res) => {
 
 /**
  * Toggle like / going
- * POST /:id/like
- * POST /:id/going
- * Body:
- *  - userId (required)
- *  - on (boolean)
+ * POST /events/:id/like
+ * POST /events/:id/going
+ * Body: { userId, on }
  */
 async function toggleUserEvent(req, res, statusKey) {
   const { userId, on } = req.body;
@@ -184,27 +170,33 @@ async function toggleUserEvent(req, res, statusKey) {
   if (!mongoose.Types.ObjectId.isValid(eventId)) {
     return res.status(400).json({ error: 'Invalid event id' });
   }
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: 'Invalid user id' });
-  }
   if (!['like', 'going'].includes(statusKey)) {
     return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  // Accept ObjectId or string for user
+  const userFilter = mongoose.Types.ObjectId.isValid(userId)
+    ? new mongoose.Types.ObjectId(userId)
+    : String(userId || '');
+
+  if (!userFilter) {
+    return res.status(400).json({ error: 'Missing user id' });
   }
 
   try {
     if (on) {
       // add (create if not exists)
       await UserEvent.updateOne(
-        { user: userId, event: eventId, status: statusKey },
-        { $setOnInsert: { user: userId, event: eventId, status: statusKey } },
+        { user: userFilter, event: eventId, status: statusKey },
+        { $setOnInsert: { user: userFilter, event: eventId, status: statusKey } },
         { upsert: true }
       );
-      // bump counters on Event (denormalized)
+      // bump counters on Event
       const inc = statusKey === 'like' ? { likesCount: 1 } : { goingCount: 1 };
       await Event.updateOne({ _id: eventId }, { $inc: inc });
     } else {
       // remove if exists
-      const del = await UserEvent.findOneAndDelete({ user: userId, event: eventId, status: statusKey });
+      const del = await UserEvent.findOneAndDelete({ user: userFilter, event: eventId, status: statusKey });
       if (del) {
         const inc = statusKey === 'like' ? { likesCount: -1 } : { goingCount: -1 };
         await Event.updateOne({ _id: eventId }, { $inc: inc });
