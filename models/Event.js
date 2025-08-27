@@ -1,5 +1,4 @@
-// models/Event.js
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const EventSchema = new mongoose.Schema(
   {
@@ -83,4 +82,4 @@ EventSchema.index({
   location: 'text',
 });
 
-module.exports = mongoose.model('Event', EventSchema);
+export default mongoose.model('Event', EventSchema);

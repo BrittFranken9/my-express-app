@@ -1,7 +1,8 @@
-// scripts/seed-events.js
-require('dotenv').config();
-const mongoose = require('mongoose');
-const Event = require('../models/Event');
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
+import Event from '../models/Event.js';
+
+dotenv.config();
 
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/mydb';
 

@@ -11,11 +11,10 @@ import User from './models/User.js';
 import testRoute from './routes/test.js';
 import indexRoute from './routes/index.js';
 import userRoute from './routes/users.js';
-import messagesRoute from './routes/events.js';
+import eventsRoute from './routes/events.js';
 
 dotenv.config();
 
-const eventsRouter = require('./routes/events');
 
 const app = express();
 
@@ -184,9 +183,8 @@ app.get('/auth/failure', (_req, res) => res.status(401).send('Authentication fai
 
 // ---------- Other routers (specific first) ----------
 app.use('/test', testRoute);
-app.use('/messages', messagesRoute);
 app.use('/users', userRoute);
-app.use('/api/events', eventsRouter);
+app.use('/api/events', eventsRoute);
 
 // ---------- Generic/index router LAST so it doesn't swallow /auth ----------
 app.use('/', indexRoute);

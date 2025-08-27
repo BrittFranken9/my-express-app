@@ -1,8 +1,8 @@
 // routes/events.js
-const express = require('express');
-const mongoose = require('mongoose');
-const Event = require('../models/Event');
-const UserEvent = require('../models/UserEvent');
+import express from 'express';
+import mongoose from 'mongoose';
+import Event from '../models/Event.js';
+import UserEvent from '../models/UserEvent.js';
 
 const router = express.Router();
 
@@ -220,4 +220,4 @@ router.get('/mine/list', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
