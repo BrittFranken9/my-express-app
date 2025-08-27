@@ -64,23 +64,62 @@ router.get('/', async (req, res) => {
       if (arr.length) filter.keywords = { $in: arr };
     }
 
-    // Text search
-    let query = Event.find(filter);
-    if (q && q.trim()) {
-      query = Event.find({
-        ...filter,
-        $text: { $search: q.trim() },
-      });
-    }
+    // Text search → bouw één filter voor beide queries
+    const countFilter = (q && q.trim())
+      ? { ...filter, $text: { $search: q.trim() } }
+      : { ...filter };
 
     const skip = (Number(page) - 1) * Number(limit);
-    const [items, total] = await Promise.all([
-      query.sort(sort).skip(skip).limit(Number(limit)).lean(),
-      query.countDocuments(),
+
+    const [total, items] = await Promise.all([
+      Event.countDocuments(countFilter),
+      Event.find(countFilter)
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
     ]);
 
     return res.json({
       items,
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / Number(limit)),
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Get a user's liked/going events (for your archive page)
+ * GET /mine/list?userId=...&status=like|going&page=1&limit=12
+ * (Deze route MOET boven '/:id' staan om route-collisions te vermijden)
+ */
+router.get('/mine/list', async (req, res) => {
+  const { userId, status = 'like', page = 1, limit = 12 } = req.query;
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user id' });
+  }
+  if (!['like', 'going'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  try {
+    const [rows, total] = await Promise.all([
+      UserEvent.find({ user: userId, status })
+        .sort('-createdAt')
+        .skip(skip)
+        .limit(Number(limit))
+        .populate('event')
+        .lean(),
+      UserEvent.countDocuments({ user: userId, status }),
+    ]);
+
+    return res.json({
+      items: rows.map(r => r.event),
       total,
       page: Number(page),
       pages: Math.ceil(total / Number(limit)),
@@ -134,8 +173,8 @@ router.delete('/:id', async (req, res) => {
  * POST /:id/like
  * POST /:id/going
  * Body:
- *  - userId (required)  <-- from your my-app auth/session
- *  - on (boolean)       <-- true = add, false = remove
+ *  - userId (required)
+ *  - on (boolean)
  */
 async function toggleUserEvent(req, res, statusKey) {
   const { userId, on } = req.body;
@@ -182,42 +221,5 @@ async function toggleUserEvent(req, res, statusKey) {
 
 router.post('/:id/like', (req, res) => toggleUserEvent(req, res, 'like'));
 router.post('/:id/going', (req, res) => toggleUserEvent(req, res, 'going'));
-
-/**
- * Get a user's liked/going events (for your archive page)
- * GET /mine?userId=...&status=like|going&page=1&limit=12
- */
-router.get('/mine/list', async (req, res) => {
-  const { userId, status = 'like', page = 1, limit = 12 } = req.query;
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: 'Invalid user id' });
-  }
-  if (!['like', 'going'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
-  }
-
-  const skip = (Number(page) - 1) * Number(limit);
-
-  try {
-    const [rows, total] = await Promise.all([
-      UserEvent.find({ user: userId, status })
-        .sort('-createdAt')
-        .skip(skip)
-        .limit(Number(limit))
-        .populate('event')
-        .lean(),
-      UserEvent.countDocuments({ user: userId, status }),
-    ]);
-
-    return res.json({
-      items: rows.map(r => r.event),
-      total,
-      page: Number(page),
-      pages: Math.ceil(total / Number(limit)),
-    });
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-});
 
 export default router;
