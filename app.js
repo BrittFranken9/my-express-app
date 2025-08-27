@@ -6,7 +6,6 @@ import cors from 'cors';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import session from 'express-session';
-import MongoStore from 'connect-mongo';
 
 import User from './models/User.js';
 import testRoute from './routes/test.js';
