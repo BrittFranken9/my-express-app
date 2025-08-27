@@ -2,8 +2,15 @@ import mongoose from 'mongoose';
 
 const EventSchema = new mongoose.Schema(
   {
-    // NEW: saved to identify the creator of the event
+    // identify the creator
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+
+    // NEW: title
+    title: {
+      type: String,
+      default: '',
+      trim: true,
+    },
 
     organizerName: {
       type: String,
@@ -48,20 +55,17 @@ const EventSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Raw keywords entered by user, e.g. "music; festival; outdoor"
     keywordsRaw: {
       type: String,
       default: '',
       trim: true,
     },
-    // Normalized keyword list for search/filtering
     keywords: {
       type: [String],
       index: true,
       default: [],
     },
 
-    // Aggregated counts (per-user state stored in UserEvent)
     likesCount: { type: Number, default: 0 },
     goingCount: { type: Number, default: 0 },
   },
@@ -70,12 +74,12 @@ const EventSchema = new mongoose.Schema(
   }
 );
 
-// Normalize keywords from keywordsRaw before save
+// Normalize keywords
 EventSchema.pre('save', function (next) {
   try {
     const raw = (this.keywordsRaw || '').toString();
     const parts = raw
-      .split(/[;,]/)         // split on ; or ,
+      .split(/[;,]/)
       .map((s) => s.trim())
       .filter(Boolean)
       .map((s) => s.toLowerCase());
@@ -88,6 +92,7 @@ EventSchema.pre('save', function (next) {
 
 // Text index for quick search
 EventSchema.index({
+  title: 'text',           // include title in the text index
   teaser: 'text',
   organizerName: 'text',
   organizationName: 'text',
