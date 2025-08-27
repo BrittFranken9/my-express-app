@@ -11,9 +11,11 @@ import User from './models/User.js';
 import testRoute from './routes/test.js';
 import indexRoute from './routes/index.js';
 import userRoute from './routes/users.js';
-import messagesRoute from './routes/messages.js';
+import messagesRoute from './routes/events.js';
 
 dotenv.config();
+
+const eventsRouter = require('./routes/events');
 
 const app = express();
 
@@ -34,6 +36,8 @@ if (mongoUri && mongoUri.trim()) {
   console.warn('MONGO_URI not set — skipping MongoDB connection.');
 }
 
+
+
 // Sessions (used for Passport login state; NOT for redirectUri)
 app.use(
   session({
@@ -49,6 +53,7 @@ app.use(
 
 app.use(passport.initialize());
 app.use(passport.session());
+
 
 // ---- base64url helpers (work on all Node versions) ----
 const toBase64Url = (str) =>
@@ -181,6 +186,7 @@ app.get('/auth/failure', (_req, res) => res.status(401).send('Authentication fai
 app.use('/test', testRoute);
 app.use('/messages', messagesRoute);
 app.use('/users', userRoute);
+app.use('/api/events', eventsRouter);
 
 // ---------- Generic/index router LAST so it doesn't swallow /auth ----------
 app.use('/', indexRoute);
